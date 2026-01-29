@@ -1,0 +1,26 @@
+{
+  "name": "google-email",
+  "version": "1.0.0",
+  "description": "Gmail integration plugin for email",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "google-email": "./google-email.mjs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "inbox": "bun google-email.mjs inbox",
+    "pull": "bun google-email.mjs pull"
+  },
+  "keywords": [
+    "gmail",
+    "google",
+    "email"
+  ],
+  "author": "Mike Smullin <mike@smullindesign.com>",
+  "license": "MIT",
+  "dependencies": {
+    "googleapis": "^134.0.0",
+    "js-yaml": "^4.1.0"
+  }
+}
