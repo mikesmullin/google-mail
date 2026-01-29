@@ -4,6 +4,11 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import inboxCommand from './cli/commands/inbox.mjs';
 import pullCommand from './cli/commands/pull.mjs';
+import moveCommand from './cli/commands/move.mjs';
+import archiveCommand from './cli/commands/archive.mjs';
+import deleteCommand from './cli/commands/delete.mjs';
+import planCommand from './cli/commands/plan.mjs';
+import applyCommand from './cli/commands/apply.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,15 +25,26 @@ Commands:
   inbox unread <id>            Mark an email as unread (offline)
   pull --since <date>          Fetch unread emails from Gmail
 
+  move <id> <folder>           Queue move to folder (offline)
+  archive <id>                 Queue archive (offline)
+  delete <id>                  Queue soft-delete (offline)
+
+  plan                         Show pending mutations
+  apply                        Apply pending mutations to Gmail
+
 Options depend on the command. Use:
   google-email <command> --help
 
 Examples:
   google-email inbox summary
   google-email inbox list --limit 20
-  google-email inbox view 6498cec18d676f08ff64932bf93e7ec33c0adb2b
-  google-email inbox read 6498cec18d676f08ff64932bf93e7ec33c0adb2b
+  google-email inbox view 6498cec
+  google-email inbox read 6498cec
   google-email pull --since 2026-01-01
+  google-email move 6498cec "Work/Important"
+  google-email archive 6498cec
+  google-email plan
+  google-email apply
 `);
 }
 
@@ -42,14 +58,32 @@ async function main() {
 
     const mainCommand = args[0];
 
-    if (mainCommand === 'inbox') {
-        await inboxCommand(args.slice(1));
-    } else if (mainCommand === 'pull') {
-        await pullCommand(args.slice(1));
-    } else {
-        console.error(`Unknown command: ${mainCommand}`);
-        printUsage();
-        process.exit(1);
+    switch (mainCommand) {
+        case 'inbox':
+            await inboxCommand(args.slice(1));
+            break;
+        case 'pull':
+            await pullCommand(args.slice(1));
+            break;
+        case 'move':
+            await moveCommand(args.slice(1));
+            break;
+        case 'archive':
+            await archiveCommand(args.slice(1));
+            break;
+        case 'delete':
+            await deleteCommand(args.slice(1));
+            break;
+        case 'plan':
+            await planCommand(args.slice(1));
+            break;
+        case 'apply':
+            await applyCommand(args.slice(1));
+            break;
+        default:
+            console.error(`Unknown command: ${mainCommand}`);
+            printUsage();
+            process.exit(1);
     }
 }
 

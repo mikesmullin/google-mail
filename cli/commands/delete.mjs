@@ -1,23 +1,23 @@
-import { saveEmail } from '../../lib/storage.mjs';
-import { findEmailById, colorize, colors } from '../../lib/utils.mjs';
+import { saveEmail } from '../lib/storage.mjs';
+import { findEmailById, colorize, colors } from '../lib/utils.mjs';
 
 function printUsage() {
     console.log(`
-Usage: google-email inbox unread <id>
+Usage: google-email delete <id>
 
-Queue mark-as-unread operation (offline).
+Queue a soft-delete operation (offline). Moves email to trash.
 The actual Gmail operation is deferred until 'google-email apply'.
 
 Arguments:
   <id>    Email hash ID, partial ID, or filename
-          (e.g., f86bca, f86bca73ca8a, f86bca73ca8afaa2ed51d827e82d190644fc1ff1)
 
 Examples:
-  google-email inbox unread f86bca
+  google-email delete f86bca
+  google-email delete f86bca73ca8afaa2ed51d827e82d190644fc1ff1
 `);
 }
 
-export default async function unreadCommand(args) {
+export default async function deleteCommand(args) {
     if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
         printUsage();
         return;
@@ -33,26 +33,22 @@ export default async function unreadCommand(args) {
 
     const { id, email } = result;
 
-    if (email.offline?.unread === true) {
-        console.log(`${colorize('⊘', colors.yellow)} Email already queued for unread: ${id}`);
-        return;
-    }
-
     if (!email.offline) {
         email.offline = {};
     }
 
-    // Clear any pending read mutation
-    delete email.offline.read;
-    delete email.offline.readQueuedAt;
+    if (email.offline.delete === true) {
+        console.log(`${colorize('⊘', colors.yellow)} Email already queued for delete: ${id}`);
+        return;
+    }
 
-    email.offline.unread = true;
-    email.offline.unreadQueuedAt = new Date().toISOString();
+    email.offline.delete = true;
+    email.offline.deleteQueuedAt = new Date().toISOString();
 
     await saveEmail(id, email);
 
     const subject = email.subject || '(No Subject)';
-    console.log(`${colorize('✓', colors.green)} Queued mark as unread: ${id}`);
+    console.log(`${colorize('✓', colors.green)} Queued for delete: ${id}`);
     console.log(`  ${subject}`);
     console.log(`\n  Run 'google-email plan' to review, 'google-email apply' to execute.`);
 }

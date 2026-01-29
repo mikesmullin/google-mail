@@ -5,7 +5,8 @@ function printUsage() {
     console.log(`
 Usage: google-email inbox read <id>
 
-Mark an email as read (offline). Adds 'offline.read: true' to the file.
+Queue mark-as-read operation (offline).
+The actual Gmail operation is deferred until 'google-email apply'.
 
 Arguments:
   <id>    Email hash ID, partial ID, or filename
@@ -13,8 +14,6 @@ Arguments:
 
 Examples:
   google-email inbox read f86bca
-  google-email inbox read f86bca73ca8afaa2ed51d827e82d190644fc1ff1
-  google-email inbox read f86bca73ca8afaa2ed51d827e82d190644fc1ff1.md
 `);
 }
 
@@ -43,12 +42,17 @@ export default async function readCommand(args) {
         return;
     }
 
+    // Clear any pending unread mutation
+    delete email.offline.unread;
+    delete email.offline.unreadQueuedAt;
+
     email.offline.read = true;
-    email.offline.readAt = new Date().toISOString();
+    email.offline.readQueuedAt = new Date().toISOString();
 
     await saveEmail(id, email);
 
     const subject = email.subject || '(No Subject)';
-    console.log(`${colorize('✓', colors.green)} Marked as read: ${id}`);
+    console.log(`${colorize('✓', colors.green)} Queued mark as read: ${id}`);
     console.log(`  ${subject}`);
+    console.log(`\n  Run 'google-email plan' to review, 'google-email apply' to execute.`);
 }

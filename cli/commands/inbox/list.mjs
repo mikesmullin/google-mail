@@ -57,10 +57,19 @@ function parseArgs(args) {
     return { limit, sinceDate, includeRead };
 }
 
+/**
+ * Check if email has pending mutations that would remove it from inbox
+ */
+function hasPendingRemoval(email) {
+    const offline = email.offline || {};
+    return offline.delete === true || offline.archive === true || !!offline.move;
+}
+
 function filterEmails(emails, sinceDate, includeRead) {
     let filtered = emails.filter(({ email }) => {
         if (includeRead) return true;
-        return !isEmailRead(email);
+        // Hide read emails and those queued for removal
+        return !isEmailRead(email) && !hasPendingRemoval(email);
     });
 
     if (sinceDate) {
