@@ -100,6 +100,7 @@ google-email inbox list --limit 20
 google-email inbox view f86bca
 google-email inbox read f86bca
 google-email inbox unread f86bca
+google-email clean
 ```
 
 ### ID Matching (Git-style)
@@ -123,6 +124,14 @@ google-email inbox view 6498cec18d676f08ff64932bf93e7ec33c0adb2b.md
 As long as the prefix is unique, it will match the email. If ambiguous, you'll get an error with all matching IDs.
 
 ### Commands
+
+#### `google-email clean`
+Delete all locally cached email Markdown files from `storage/`.
+
+```bash
+google-email clean
+google-email clean --yaml
+```
 
 #### `google-email inbox summary`
 Show email counts by folder (unread, read, total).

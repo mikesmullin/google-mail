@@ -9,6 +9,7 @@ import archiveCommand from './cli/commands/archive.mjs';
 import deleteCommand from './cli/commands/delete.mjs';
 import planCommand from './cli/commands/plan.mjs';
 import applyCommand from './cli/commands/apply.mjs';
+import cleanCommand from './cli/commands/clean.mjs';
 import { setOutputFormat } from './cli/lib/output.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -30,8 +31,9 @@ Commands:
   archive <id>                 Queue archive (offline)
   delete <id>                  Queue soft-delete (offline)
 
-  plan                         Show pending mutations
-  apply                        Apply pending mutations to Gmail
+    plan                         Show pending mutations
+    apply                        Apply pending mutations to Gmail
+    clean                        Delete local offline email cache files
 
 Options depend on the command. Use:
   google-email <command> --help
@@ -103,6 +105,9 @@ async function main() {
             break;
         case 'apply':
             await applyCommand(args.slice(1));
+            break;
+        case 'clean':
+            await cleanCommand(args.slice(1));
             break;
         default:
             console.error(`Unknown command: ${mainCommand}`);
