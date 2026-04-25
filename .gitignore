@@ -3,6 +3,7 @@ node_modules/
 
 # Data
 /storage/
+/tmp/
 
 # Auth tokens (sensitive)
 .tokens.yaml

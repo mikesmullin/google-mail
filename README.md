@@ -101,6 +101,7 @@ google-email inbox view f86bca
 google-email inbox read f86bca
 google-email inbox unread f86bca
 google-email clean
+google-email labels
 ```
 
 ### ID Matching (Git-style)
@@ -131,6 +132,14 @@ Delete all locally cached email Markdown files from `storage/`.
 ```bash
 google-email clean
 google-email clean --yaml
+```
+
+#### `google-email labels`
+List available Gmail labels.
+
+```bash
+google-email labels
+google-email labels --yaml
 ```
 
 #### `google-email inbox summary`
