@@ -84,7 +84,7 @@ ${formattedBody}
  * Process a single email: store locally (leaves remote mail unmodified)
  * @param {object} gmail - Gmail API client (unused, kept for API compatibility)
  * @param {object} email - Email object
- * @returns {Promise<{written: boolean}>}
+ * @returns {Promise<{written: boolean, id: string, subject: string}>}
  */
 export async function processEmail(gmail, email) {
     const hash = hashGmailId(email.id);
@@ -98,10 +98,12 @@ export async function processEmail(gmail, email) {
         };
 
         await writeEmailToMarkdown(hash, emailWithHash);
-        console.log(`✓ Stored: ${formatEmailRef(hash, email.subject)}`);
-    } else {
-        console.log(`⊘ Skipped (exists): ${formatEmailRef(hash, email.subject)}`);
     }
 
-    return { written: !exists };
+    return {
+        written: !exists,
+        id: hash,
+        subject: email.subject,
+        reference: formatEmailRef(hash, email.subject),
+    };
 }

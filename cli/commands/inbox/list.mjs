@@ -6,6 +6,7 @@ import {
     getShortId,
     parseDate,
 } from '../../lib/utils.mjs';
+import { isYamlOutput, printYaml } from '../../lib/output.mjs';
 
 const DEFAULT_LIMIT = 10;
 
@@ -156,12 +157,51 @@ export default async function listCommand(args) {
     emails = sortEmailsByDate(emails);
 
     if (emails.length === 0) {
-        console.log('No emails found.');
+        if (isYamlOutput()) {
+            printYaml({
+                ok: true,
+                total: 0,
+                showing: 0,
+                limit,
+                includeRead,
+                since: sinceDate ? sinceDate.toISOString() : null,
+                emails: [],
+            });
+        } else {
+            console.log('No emails found.');
+        }
         return;
     }
 
     const showing = Math.min(limit, emails.length);
     const label = includeRead ? 'messages' : 'unread messages';
+
+    if (isYamlOutput()) {
+        const payload = emails.slice(0, showing).map(({ id, email }, index) => ({
+            index: index + 1,
+            id,
+            shortId: getShortId(id),
+            receivedDateTime: email.receivedDateTime,
+            age: formatAge(email.receivedDateTime),
+            sender: formatSender(email),
+            subject: email.subject || '(No Subject)',
+            isRead: isEmailRead(email),
+            hasPendingRemoval: hasPendingRemoval(email),
+        }));
+
+        printYaml({
+            ok: true,
+            total: emails.length,
+            showing,
+            limit,
+            includeRead,
+            since: sinceDate ? sinceDate.toISOString() : null,
+            label,
+            emails: payload,
+        });
+        return;
+    }
+
     console.log(`\n📚 ${emails.length} ${label} in cache (showing ${showing}):\n`);
 
     for (let i = 0; i < showing; i++) {

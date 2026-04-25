@@ -1,5 +1,6 @@
 import { saveEmail } from '../lib/storage.mjs';
 import { findEmailById, colorize, colors } from '../lib/utils.mjs';
+import { isYamlOutput, printYaml } from '../lib/output.mjs';
 
 function printUsage() {
     console.log(`
@@ -27,7 +28,11 @@ export default async function deleteCommand(args) {
     const result = await findEmailById(partialId);
 
     if (!result) {
-        console.error(`${colorize('✗', colors.red)} Email not found: ${partialId}`);
+        if (isYamlOutput()) {
+            printYaml({ ok: false, error: { code: 'EMAIL_NOT_FOUND', id: partialId } });
+        } else {
+            console.error(`${colorize('✗', colors.red)} Email not found: ${partialId}`);
+        }
         process.exit(1);
     }
 
@@ -38,7 +43,11 @@ export default async function deleteCommand(args) {
     }
 
     if (email.offline.delete === true) {
-        console.log(`${colorize('⊘', colors.yellow)} Email already queued for delete: ${id}`);
+        if (isYamlOutput()) {
+            printYaml({ ok: true, status: 'noop', action: 'delete', id, subject: email.subject || '(No Subject)' });
+        } else {
+            console.log(`${colorize('⊘', colors.yellow)} Email already queued for delete: ${id}`);
+        }
         return;
     }
 
@@ -48,7 +57,11 @@ export default async function deleteCommand(args) {
     await saveEmail(id, email);
 
     const subject = email.subject || '(No Subject)';
-    console.log(`${colorize('✓', colors.green)} Queued for delete: ${id}`);
-    console.log(`  ${subject}`);
-    console.log(`\n  Run 'google-email plan' to review, 'google-email apply' to execute.`);
+    if (isYamlOutput()) {
+        printYaml({ ok: true, status: 'queued', action: 'delete', id, subject });
+    } else {
+        console.log(`${colorize('✓', colors.green)} Queued for delete: ${id}`);
+        console.log(`  ${subject}`);
+        console.log(`\n  Run 'google-email plan' to review, 'google-email apply' to execute.`);
+    }
 }

@@ -1,5 +1,6 @@
 import { loadAllEmails } from '../lib/storage.mjs';
 import { colorize, colors, getShortId } from '../lib/utils.mjs';
+import { isYamlOutput, printYaml } from '../lib/output.mjs';
 
 function printUsage() {
     console.log(`
@@ -80,8 +81,36 @@ export default async function planCommand(args) {
     }
 
     if (pending.length === 0) {
-        console.log(`\n${colorize('✓', colors.green)} No pending mutations.`);
-        console.log(`  Use 'google-email archive', 'google-email move', or 'google-email delete' to queue changes.`);
+        if (isYamlOutput()) {
+            printYaml({
+                ok: true,
+                pendingEmails: 0,
+                totalActions: 0,
+                pending: [],
+            });
+        } else {
+            console.log(`\n${colorize('✓', colors.green)} No pending mutations.`);
+            console.log(`  Use 'google-email archive', 'google-email move', or 'google-email delete' to queue changes.`);
+        }
+        return;
+    }
+
+    const pendingYaml = pending.map(({ id, email, mutations }) => ({
+        id,
+        shortId: getShortId(id),
+        subject: email.subject || '(No Subject)',
+        mutations,
+    }));
+
+    const totalMutations = pending.reduce((sum, p) => sum + p.mutations.length, 0);
+
+    if (isYamlOutput()) {
+        printYaml({
+            ok: true,
+            pendingEmails: pending.length,
+            totalActions: totalMutations,
+            pending: pendingYaml,
+        });
         return;
     }
 
@@ -101,7 +130,6 @@ export default async function planCommand(args) {
         console.log();
     }
 
-    const totalMutations = pending.reduce((sum, p) => sum + p.mutations.length, 0);
     console.log(`${colorize('Plan:', colors.bright)} ${totalMutations} action(s) on ${pending.length} email(s)`);
     console.log(`\nRun 'google-email apply' to execute these changes on Gmail.`);
 }

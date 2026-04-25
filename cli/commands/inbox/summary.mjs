@@ -1,4 +1,5 @@
 import { loadAllEmails, isEmailRead, getEmailFolder } from '../../lib/storage.mjs';
+import { isYamlOutput, printYaml } from '../../lib/output.mjs';
 
 function printUsage() {
     console.log(`
@@ -35,12 +36,31 @@ export default async function summaryCommand(args) {
         }
     }
 
-    console.log('\nFolder Summary:');
-    console.log('===============');
-
     let totalUnread = 0;
     let totalRead = 0;
     let totalAll = 0;
+
+    for (const counts of Object.values(folderCounts)) {
+        totalUnread += counts.unread;
+        totalRead += counts.read;
+        totalAll += counts.total;
+    }
+
+    if (isYamlOutput()) {
+        printYaml({
+            ok: true,
+            folders: folderCounts,
+            overall: {
+                unread: totalUnread,
+                read: totalRead,
+                total: totalAll,
+            },
+        });
+        return;
+    }
+
+    console.log('\nFolder Summary:');
+    console.log('===============');
 
     for (const [folder, counts] of Object.entries(folderCounts)) {
         console.log(`${folder}:`);
@@ -48,10 +68,6 @@ export default async function summaryCommand(args) {
         console.log(`  Read:   ${counts.read}`);
         console.log(`  Total:  ${counts.total}`);
         console.log();
-
-        totalUnread += counts.unread;
-        totalRead += counts.read;
-        totalAll += counts.total;
     }
 
     console.log('Overall:');

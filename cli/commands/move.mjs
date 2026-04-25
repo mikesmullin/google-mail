@@ -1,5 +1,6 @@
 import { saveEmail } from '../lib/storage.mjs';
 import { findEmailById, colorize, colors } from '../lib/utils.mjs';
+import { isYamlOutput, printYaml } from '../lib/output.mjs';
 
 function printUsage() {
     console.log(`
@@ -30,7 +31,11 @@ export default async function moveCommand(args) {
     const result = await findEmailById(partialId);
 
     if (!result) {
-        console.error(`${colorize('✗', colors.red)} Email not found: ${partialId}`);
+        if (isYamlOutput()) {
+            printYaml({ ok: false, error: { code: 'EMAIL_NOT_FOUND', id: partialId } });
+        } else {
+            console.error(`${colorize('✗', colors.red)} Email not found: ${partialId}`);
+        }
         process.exit(1);
     }
 
@@ -41,7 +46,18 @@ export default async function moveCommand(args) {
     }
 
     if (email.offline.move === folder) {
-        console.log(`${colorize('⊘', colors.yellow)} Email already queued for move to "${folder}": ${id}`);
+        if (isYamlOutput()) {
+            printYaml({
+                ok: true,
+                status: 'noop',
+                action: 'move',
+                id,
+                folder,
+                subject: email.subject || '(No Subject)',
+            });
+        } else {
+            console.log(`${colorize('⊘', colors.yellow)} Email already queued for move to "${folder}": ${id}`);
+        }
         return;
     }
 
@@ -51,7 +67,11 @@ export default async function moveCommand(args) {
     await saveEmail(id, email);
 
     const subject = email.subject || '(No Subject)';
-    console.log(`${colorize('✓', colors.green)} Queued move to "${folder}": ${id}`);
-    console.log(`  ${subject}`);
-    console.log(`\n  Run 'google-email plan' to review, 'google-email apply' to execute.`);
+    if (isYamlOutput()) {
+        printYaml({ ok: true, status: 'queued', action: 'move', id, folder, subject });
+    } else {
+        console.log(`${colorize('✓', colors.green)} Queued move to "${folder}": ${id}`);
+        console.log(`  ${subject}`);
+        console.log(`\n  Run 'google-email plan' to review, 'google-email apply' to execute.`);
+    }
 }

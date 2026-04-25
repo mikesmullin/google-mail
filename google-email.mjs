@@ -9,6 +9,7 @@ import archiveCommand from './cli/commands/archive.mjs';
 import deleteCommand from './cli/commands/delete.mjs';
 import planCommand from './cli/commands/plan.mjs';
 import applyCommand from './cli/commands/apply.mjs';
+import { setOutputFormat } from './cli/lib/output.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,6 +36,9 @@ Commands:
 Options depend on the command. Use:
   google-email <command> --help
 
+Global options:
+    --yaml                      Output machine-readable YAML
+
 Examples:
   google-email inbox summary
   google-email inbox list --limit 20
@@ -48,8 +52,28 @@ Examples:
 `);
 }
 
+function parseGlobalArgs(rawArgs) {
+    let yamlOutput = false;
+    const args = [];
+
+    for (const arg of rawArgs) {
+        if (arg === '--yaml') {
+            yamlOutput = true;
+            continue;
+        }
+        args.push(arg);
+    }
+
+    return { args, yamlOutput };
+}
+
 async function main() {
-    const args = process.argv.slice(2);
+    const parsed = parseGlobalArgs(process.argv.slice(2));
+    const args = parsed.args;
+
+    if (parsed.yamlOutput) {
+        setOutputFormat('yaml');
+    }
 
     if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
         printUsage();

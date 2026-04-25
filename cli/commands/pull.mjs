@@ -3,6 +3,7 @@ import { getStorageDir } from '../lib/storage.mjs';
 import { parseDate } from '../lib/utils.mjs';
 import { fetchUnreadEmails } from './pull/fetch.mjs';
 import { processEmail } from './pull/process.mjs';
+import { isYamlOutput, printYaml } from '../lib/output.mjs';
 import fs from 'fs/promises';
 
 function printUsage() {
@@ -80,22 +81,33 @@ export default async function pullCommand(args) {
         sinceDate = parsed.sinceDate;
         limit = parsed.limit;
     } catch (error) {
-        console.error(`Error: ${error.message}`);
-        printUsage();
+        if (isYamlOutput()) {
+            printYaml({ ok: false, error: { code: 'INVALID_ARGUMENTS', message: error.message } });
+        } else {
+            console.error(`Error: ${error.message}`);
+            printUsage();
+        }
         process.exit(1);
     }
 
     // Check for credentials
     if (!(await hasCredentials())) {
-        console.error(`Error: Gmail credentials not found.`);
-        console.error(`Please download credentials.json from Google Cloud Console`);
-        console.error(`and place it at: ${getCredentialsPath()}`);
+        const message = `Gmail credentials not found. Please download credentials.json from Google Cloud Console and place it at: ${getCredentialsPath()}`;
+        if (isYamlOutput()) {
+            printYaml({ ok: false, error: { code: 'MISSING_CREDENTIALS', message } });
+        } else {
+            console.error(`Error: Gmail credentials not found.`);
+            console.error(`Please download credentials.json from Google Cloud Console`);
+            console.error(`and place it at: ${getCredentialsPath()}`);
+        }
         process.exit(1);
     }
 
-    console.log(`Fetching unread emails since: ${sinceDate.toISOString().split('T')[0]}`);
-    if (limit) {
-        console.log(`Processing limit: ${limit}`);
+    if (!isYamlOutput()) {
+        console.log(`Fetching unread emails since: ${sinceDate.toISOString().split('T')[0]}`);
+        if (limit) {
+            console.log(`Processing limit: ${limit}`);
+        }
     }
 
     try {
@@ -105,19 +117,37 @@ export default async function pullCommand(args) {
         const emails = await fetchUnreadEmails(gmail, sinceDate);
 
         if (emails.length === 0) {
-            console.log('No unread emails found.');
+            if (isYamlOutput()) {
+                printYaml({
+                    ok: true,
+                    since: sinceDate.toISOString(),
+                    limit,
+                    available: 0,
+                    processed: 0,
+                    written: 0,
+                    skipped: 0,
+                    results: [],
+                });
+            } else {
+                console.log('No unread emails found.');
+            }
             return;
         }
 
-        console.log(`Found ${emails.length} unread emails.`);
+        if (!isYamlOutput()) {
+            console.log(`Found ${emails.length} unread emails.`);
+        }
 
         let written = 0;
         let skipped = 0;
         let processed = 0;
+        const results = [];
 
         for (const email of emails) {
             if (limit && processed >= limit) {
-                console.log(`\nReached processing limit of ${limit}. Stopping.`);
+                if (!isYamlOutput()) {
+                    console.log(`\nReached processing limit of ${limit}. Stopping.`);
+                }
                 break;
             }
 
@@ -125,19 +155,48 @@ export default async function pullCommand(args) {
 
             if (result.written) {
                 written++;
+                if (!isYamlOutput()) {
+                    console.log(`✓ Stored: ${result.reference}`);
+                }
             } else {
                 skipped++;
+                if (!isYamlOutput()) {
+                    console.log(`⊘ Skipped (exists): ${result.reference}`);
+                }
             }
             processed++;
+            results.push({
+                id: result.id,
+                shortId: result.id.substring(0, 6),
+                subject: result.subject,
+                status: result.written ? 'written' : 'skipped',
+            });
         }
 
-        console.log(`\nSummary:`);
-        console.log(`  Available:  ${emails.length}`);
-        console.log(`  Processed:  ${processed}`);
-        console.log(`  Written:    ${written}`);
-        console.log(`  Skipped:    ${skipped}`);
+        if (isYamlOutput()) {
+            printYaml({
+                ok: true,
+                since: sinceDate.toISOString(),
+                limit,
+                available: emails.length,
+                processed,
+                written,
+                skipped,
+                results,
+            });
+        } else {
+            console.log(`\nSummary:`);
+            console.log(`  Available:  ${emails.length}`);
+            console.log(`  Processed:  ${processed}`);
+            console.log(`  Written:    ${written}`);
+            console.log(`  Skipped:    ${skipped}`);
+        }
     } catch (error) {
-        console.error('Error:', error.message);
+        if (isYamlOutput()) {
+            printYaml({ ok: false, error: { code: 'PULL_FAILED', message: error.message } });
+        } else {
+            console.error('Error:', error.message);
+        }
         process.exit(1);
     }
 }

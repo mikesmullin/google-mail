@@ -2,6 +2,7 @@ import { loadAllEmails, saveEmail } from '../lib/storage.mjs';
 import { getGmailClient, hasCredentials, getCredentialsPath } from '../lib/client.mjs';
 import { colorize, colors, getShortId } from '../lib/utils.mjs';
 import { getPendingMutations } from './plan.mjs';
+import { isYamlOutput, printYaml } from '../lib/output.mjs';
 
 function printUsage() {
     console.log(`
@@ -114,12 +115,27 @@ function clearMutations(email, mutations) {
     for (const mutation of mutations) {
         switch (mutation.type) {
             case 'read':
-                delete email.offline.read;
+                // Keep local read state so the message remains handled after sync.
+                email.offline.read = true;
                 delete email.offline.readQueuedAt;
+
+                // Reconcile canonical fields for local cache consistency.
+                email.isRead = true;
+                if (Array.isArray(email.labelIds)) {
+                    email.labelIds = email.labelIds.filter((label) => label !== 'UNREAD');
+                }
                 break;
             case 'unread':
                 delete email.offline.unread;
                 delete email.offline.unreadQueuedAt;
+
+                // Mark local state as unread after successful sync.
+                delete email.offline.read;
+                delete email.offline.readQueuedAt;
+                email.isRead = false;
+                if (Array.isArray(email.labelIds) && !email.labelIds.includes('UNREAD')) {
+                    email.labelIds.push('UNREAD');
+                }
                 break;
             case 'archive':
                 delete email.offline.archive;
@@ -156,9 +172,20 @@ export default async function applyCommand(args) {
 
     // Check for credentials
     if (!dryRun && !(await hasCredentials())) {
-        console.error(`Error: Gmail credentials not found.`);
-        console.error(`Please download credentials.json from Google Cloud Console`);
-        console.error(`and place it at: ${getCredentialsPath()}`);
+        const message = `Gmail credentials not found. Please download credentials.json from Google Cloud Console and place it at: ${getCredentialsPath()}`;
+        if (isYamlOutput()) {
+            printYaml({
+                ok: false,
+                error: {
+                    code: 'MISSING_CREDENTIALS',
+                    message,
+                },
+            });
+        } else {
+            console.error(`Error: Gmail credentials not found.`);
+            console.error(`Please download credentials.json from Google Cloud Console`);
+            console.error(`and place it at: ${getCredentialsPath()}`);
+        }
         process.exit(1);
     }
 
@@ -173,16 +200,30 @@ export default async function applyCommand(args) {
     }
 
     if (pending.length === 0) {
-        console.log(`\n${colorize('✓', colors.green)} No pending mutations to apply.`);
+        if (isYamlOutput()) {
+            printYaml({
+                ok: true,
+                dryRun,
+                pendingEmails: 0,
+                totalActions: 0,
+                successCount: 0,
+                errorCount: 0,
+                results: [],
+            });
+        } else {
+            console.log(`\n${colorize('✓', colors.green)} No pending mutations to apply.`);
+        }
         return;
     }
 
     const totalMutations = pending.reduce((sum, p) => sum + p.mutations.length, 0);
 
-    if (dryRun) {
-        console.log(`\n${colorize('Dry run:', colors.yellow)} Would apply ${totalMutations} action(s) to ${pending.length} email(s):\n`);
-    } else {
-        console.log(`\n${colorize('Applying', colors.bright)} ${totalMutations} action(s) to ${pending.length} email(s)...\n`);
+    if (!isYamlOutput()) {
+        if (dryRun) {
+            console.log(`\n${colorize('Dry run:', colors.yellow)} Would apply ${totalMutations} action(s) to ${pending.length} email(s):\n`);
+        } else {
+            console.log(`\n${colorize('Applying', colors.bright)} ${totalMutations} action(s) to ${pending.length} email(s)...\n`);
+        }
     }
 
     let gmail = null;
@@ -192,6 +233,7 @@ export default async function applyCommand(args) {
 
     let successCount = 0;
     let errorCount = 0;
+    const results = [];
 
     for (const { id, email, mutations } of pending) {
         const shortId = colorize(getShortId(id), colors.cyan);
@@ -200,18 +242,33 @@ export default async function applyCommand(args) {
 
         for (const mutation of mutations) {
             const actionDesc = formatAction(mutation);
+            const resultEntry = {
+                id,
+                shortId: getShortId(id),
+                subject,
+                action: actionDesc,
+            };
 
             if (dryRun) {
-                console.log(`  ${shortId}\t${actionDesc}\t${truncatedSubject}`);
+                if (!isYamlOutput()) {
+                    console.log(`  ${shortId}\t${actionDesc}\t${truncatedSubject}`);
+                }
                 successCount++;
+                results.push({ ...resultEntry, status: 'planned' });
             } else {
                 try {
                     await applyMutation(gmail, email, mutation);
-                    console.log(`  ${colorize('✓', colors.green)} ${shortId}\t${actionDesc}`);
+                    if (!isYamlOutput()) {
+                        console.log(`  ${colorize('✓', colors.green)} ${shortId}\t${actionDesc}`);
+                    }
                     successCount++;
+                    results.push({ ...resultEntry, status: 'applied' });
                 } catch (error) {
-                    console.log(`  ${colorize('✗', colors.red)} ${shortId}\t${actionDesc}\t${error.message}`);
+                    if (!isYamlOutput()) {
+                        console.log(`  ${colorize('✗', colors.red)} ${shortId}\t${actionDesc}\t${error.message}`);
+                    }
                     errorCount++;
+                    results.push({ ...resultEntry, status: 'failed', error: error.message });
                 }
             }
         }
@@ -223,14 +280,26 @@ export default async function applyCommand(args) {
         }
     }
 
-    console.log();
-
-    if (dryRun) {
-        console.log(`${colorize('Dry run complete.', colors.yellow)} Run without --dry-run to apply changes.`);
-    } else if (errorCount === 0) {
-        console.log(`${colorize('✓', colors.green)} Successfully applied ${successCount} action(s).`);
+    if (isYamlOutput()) {
+        printYaml({
+            ok: errorCount === 0,
+            dryRun,
+            pendingEmails: pending.length,
+            totalActions: totalMutations,
+            successCount,
+            errorCount,
+            results,
+        });
     } else {
-        console.log(`${colorize('⚠', colors.yellow)} Applied ${successCount} action(s), ${errorCount} failed.`);
+        console.log();
+
+        if (dryRun) {
+            console.log(`${colorize('Dry run complete.', colors.yellow)} Run without --dry-run to apply changes.`);
+        } else if (errorCount === 0) {
+            console.log(`${colorize('✓', colors.green)} Successfully applied ${successCount} action(s).`);
+        } else {
+            console.log(`${colorize('⚠', colors.yellow)} Applied ${successCount} action(s), ${errorCount} failed.`);
+        }
     }
 }
 

@@ -39,6 +39,16 @@ Required scopes:
 
 ## Usage
 
+Global option:
+- `--yaml` outputs machine-readable YAML instead of human/ANSI-formatted text.
+
+Examples:
+```bash
+google-email plan --yaml
+google-email apply --dry-run --yaml
+google-email inbox list --limit 5 --yaml
+```
+
 ### Pull & Store Emails (ETL)
 Fetch unread emails since a given date and store as Markdown files in `storage/`:
 
