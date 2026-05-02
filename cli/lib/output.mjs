@@ -16,6 +16,7 @@ export function printYaml(data) {
         lineWidth: -1,
         flowLevel: -1,
         noRefs: true,
+        quotingType: '\'',
     });
     console.log(yml);
 }

@@ -1,5 +1,5 @@
 import { findEmailById } from '../../lib/utils.mjs';
-import yaml from 'js-yaml';
+import { printYaml } from '../../lib/output.mjs';
 
 function printUsage() {
     console.log(`
@@ -35,11 +35,5 @@ export default async function viewCommand(args) {
     }
 
     const { email } = result;
-    const ymlContent = yaml.dump(email, {
-        indent: 2,
-        lineWidth: -1,
-        flowLevel: -1,
-    });
-
-    console.log(ymlContent);
+    printYaml(email);
 }
