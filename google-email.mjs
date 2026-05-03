@@ -9,6 +9,7 @@ import archiveCommand from './cli/commands/archive.mjs';
 import deleteCommand from './cli/commands/delete.mjs';
 import planCommand from './cli/commands/plan.mjs';
 import applyCommand from './cli/commands/apply.mjs';
+import clearCommand from './cli/commands/clear.mjs';
 import cleanCommand from './cli/commands/clean.mjs';
 import labelsCommand from './cli/commands/labels.mjs';
 import { setOutputFormat } from './cli/lib/output.mjs';
@@ -35,6 +36,8 @@ function printUsage() {
                 '',
                 '  plan                         Show pending mutations',
                 '  apply                        Apply pending mutations to Gmail',
+                '  clear <id>                   Rollback pending mutations for an email',
+                '  clear --erase <id>           Delete local cache file for an email',
                 '  clean                        Delete local offline email cache files',
                 '',
                 'Options depend on the command. Use:',
@@ -111,6 +114,9 @@ async function main() {
             break;
         case 'apply':
             await applyCommand(args.slice(1));
+            break;
+        case 'clear':
+            await clearCommand(args.slice(1));
             break;
         case 'clean':
             await cleanCommand(args.slice(1));

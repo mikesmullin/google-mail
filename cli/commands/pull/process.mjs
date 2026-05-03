@@ -2,7 +2,7 @@ import { createHash } from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
 import yaml from 'js-yaml';
-import { getStorageDir } from '../../lib/storage.mjs';
+import { getStorageDir, loadAllEmails, loadEmail, saveEmail } from '../../lib/storage.mjs';
 
 /**
  * Generate SHA1 hash from Gmail message ID
@@ -81,10 +81,10 @@ ${formattedBody}
 }
 
 /**
- * Process a single email: store locally (leaves remote mail unmodified)
- * @param {object} gmail - Gmail API client (unused, kept for API compatibility)
- * @param {object} email - Email object
- * @returns {Promise<{written: boolean, id: string, subject: string}>}
+ * Process a single email: store locally, or detect label changes if already cached.
+ * @param {object} gmail - Gmail API client
+ * @param {object} email - Email object (freshly fetched from remote)
+ * @returns {Promise<{written: boolean, updated: boolean, id: string, subject: string, transitions: Array}>}
  */
 export async function processEmail(gmail, email) {
     const hash = hashGmailId(email.id);
@@ -98,12 +98,152 @@ export async function processEmail(gmail, email) {
         };
 
         await writeEmailToMarkdown(hash, emailWithHash);
+        return {
+            written: true,
+            updated: false,
+            id: hash,
+            subject: email.subject,
+            reference: formatEmailRef(hash, email.subject),
+            transitions: [],
+        };
+    }
+
+    // Email already cached — check for label changes since last pull
+    const cached = await loadEmail(hash);
+    const cachedLabelIds = cached.labelIds || [];
+    const remoteLabelIds = email.labelIds || [];
+
+    const now = new Date().toISOString();
+    const transition = computeLabelTransition(cachedLabelIds, remoteLabelIds, now);
+
+    if (transition) {
+        if (!cached.offline) cached.offline = {};
+        if (!cached.offline.transitions) cached.offline.transitions = [];
+        cached.offline.transitions.push(transition);
+
+        // Refresh live fields from remote
+        cached.labelIds = remoteLabelIds;
+        cached.isRead = email.isRead;
+        cached.snippet = email.snippet;
+
+        await saveEmail(hash, cached);
     }
 
     return {
-        written: !exists,
+        written: false,
+        updated: !!transition,
         id: hash,
         subject: email.subject,
         reference: formatEmailRef(hash, email.subject),
+        transitions: transition ? [transition] : [],
     };
+}
+
+/**
+ * Compute label transitions between cached and remote label sets.
+ * Returns null if there are no changes.
+ */
+function computeLabelTransition(cachedLabelIds, remoteLabelIds, detectedAt) {
+    const cachedSet = new Set(cachedLabelIds);
+    const remoteSet = new Set(remoteLabelIds);
+
+    const added = remoteLabelIds.filter((l) => !cachedSet.has(l));
+    const removed = cachedLabelIds.filter((l) => !remoteSet.has(l));
+
+    if (added.length === 0 && removed.length === 0) return null;
+
+    // Determine primary transition type from the most significant label change
+    let type = 'labels_changed';
+    if (added.includes('TRASH')) {
+        type = 'deleted';
+    } else if (removed.includes('INBOX') && !remoteSet.has('INBOX')) {
+        type = 'archived';
+    } else if (removed.includes('UNREAD') && !remoteSet.has('UNREAD')) {
+        type = 'read';
+    } else if (added.includes('UNREAD') && !cachedSet.has('UNREAD')) {
+        type = 'unread';
+    }
+
+    return { type, from: cachedLabelIds, to: remoteLabelIds, added, removed, detectedAt };
+}
+
+/**
+ * Detect emails that were cached within the pull window but are no longer present
+ * in the remote unread inbox results. Probes Gmail to determine the current state
+ * and records a transition in the local cache file.
+ *
+ * @param {object} gmail - Gmail API client
+ * @param {Date} sinceDate - The start of the current pull window
+ * @param {Set<string>} fetchedGmailIds - Set of Gmail message IDs returned by this pull
+ * @returns {Promise<Array>} Array of {id, subject, transitions} for emails with detected changes
+ */
+export async function detectGoneEmails(gmail, sinceDate, fetchedGmailIds) {
+    const allCached = await loadAllEmails();
+    const sinceMs = sinceDate.getTime();
+    const results = [];
+
+    for (const { id: hash, email: cached } of allCached) {
+        const receivedMs = new Date(cached.receivedDateTime || 0).getTime();
+
+        // Only consider emails within the pull window
+        if (receivedMs < sinceMs) continue;
+
+        // Already present in this pull — handled by processEmail
+        if (fetchedGmailIds.has(cached.id)) continue;
+
+        // Only probe emails that were last seen as UNREAD in INBOX
+        const cachedLabels = cached.labelIds || [];
+        if (!cachedLabels.includes('UNREAD') || !cachedLabels.includes('INBOX')) continue;
+
+        // User already queued a local delete — skip to avoid noise
+        if (cached.offline?.delete === true) continue;
+
+        try {
+            const response = await gmail.users.messages.get({
+                userId: 'me',
+                id: cached.id,
+                format: 'minimal',
+            });
+
+            const remoteLabelIds = response.data.labelIds || [];
+            const now = new Date().toISOString();
+            const transition = computeLabelTransition(cachedLabels, remoteLabelIds, now);
+
+            if (transition) {
+                if (!cached.offline) cached.offline = {};
+                if (!cached.offline.transitions) cached.offline.transitions = [];
+                cached.offline.transitions.push(transition);
+
+                cached.labelIds = remoteLabelIds;
+                cached.isRead = !remoteLabelIds.includes('UNREAD');
+
+                await saveEmail(hash, cached);
+                results.push({ id: hash, subject: cached.subject, transitions: [transition] });
+            }
+        } catch (error) {
+            const statusCode = error.code || error.status || error?.response?.status;
+            if (statusCode === 404) {
+                // Message permanently deleted from Gmail
+                const now = new Date().toISOString();
+                const transition = {
+                    type: 'deleted',
+                    from: cachedLabels,
+                    to: [],
+                    added: [],
+                    removed: cachedLabels,
+                    detectedAt: now,
+                };
+                if (!cached.offline) cached.offline = {};
+                if (!cached.offline.transitions) cached.offline.transitions = [];
+                cached.offline.transitions.push(transition);
+
+                await saveEmail(hash, cached);
+                results.push({ id: hash, subject: cached.subject, transitions: [transition] });
+            } else {
+                console.error(`Warning: Failed to probe message ${cached.id}: ${error.message}`);
+            }
+        }
+    }
+
+    return results;
 }

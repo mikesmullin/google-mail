@@ -2,7 +2,7 @@ import { getGmailClient, hasCredentials, getCredentialsPath } from '../lib/clien
 import { getStorageDir } from '../lib/storage.mjs';
 import { parseDate } from '../lib/utils.mjs';
 import { fetchUnreadEmails } from './pull/fetch.mjs';
-import { processEmail } from './pull/process.mjs';
+import { processEmail, detectGoneEmails } from './pull/process.mjs';
 import { isYamlOutput, printYaml } from '../lib/output.mjs';
 import fs from 'fs/promises';
 
@@ -140,8 +140,10 @@ export default async function pullCommand(args) {
 
         let written = 0;
         let skipped = 0;
+        let updated = 0;
         let processed = 0;
         const results = [];
+        const fetchedGmailIds = new Set(emails.map((e) => e.id));
 
         for (const email of emails) {
             if (limit && processed >= limit) {
@@ -158,6 +160,12 @@ export default async function pullCommand(args) {
                 if (!isYamlOutput()) {
                     console.log(`✓ Stored: ${result.reference}`);
                 }
+            } else if (result.updated) {
+                updated++;
+                if (!isYamlOutput()) {
+                    const types = result.transitions.map((t) => t.type).join(', ');
+                    console.log(`~ Updated (${types}): ${result.reference}`);
+                }
             } else {
                 skipped++;
                 if (!isYamlOutput()) {
@@ -169,8 +177,21 @@ export default async function pullCommand(args) {
                 id: result.id,
                 shortId: result.id.substring(0, 6),
                 subject: result.subject,
-                status: result.written ? 'written' : 'skipped',
+                status: result.written ? 'written' : result.updated ? 'updated' : 'skipped',
+                transitions: result.transitions,
             });
+        }
+
+        // Detect emails within the pull window that have gone from the remote unread inbox
+        if (!isYamlOutput()) {
+            console.log(`\nChecking for remote state changes...`);
+        }
+        const goneResults = await detectGoneEmails(gmail, sinceDate, fetchedGmailIds);
+        if (!isYamlOutput() && goneResults.length > 0) {
+            for (const r of goneResults) {
+                const types = r.transitions.map((t) => t.type).join(', ');
+                console.log(`! Remote change (${types}): ${r.subject || r.id}`);
+            }
         }
 
         if (isYamlOutput()) {
@@ -181,15 +202,20 @@ export default async function pullCommand(args) {
                 available: emails.length,
                 processed,
                 written,
+                updated,
                 skipped,
+                remoteChanges: goneResults.length,
                 results,
+                gone: goneResults,
             });
         } else {
             console.log(`\nSummary:`);
-            console.log(`  Available:  ${emails.length}`);
-            console.log(`  Processed:  ${processed}`);
-            console.log(`  Written:    ${written}`);
-            console.log(`  Skipped:    ${skipped}`);
+            console.log(`  Available:      ${emails.length}`);
+            console.log(`  Processed:      ${processed}`);
+            console.log(`  Written:        ${written}`);
+            console.log(`  Updated:        ${updated}`);
+            console.log(`  Skipped:        ${skipped}`);
+            console.log(`  Remote changes: ${goneResults.length}`);
         }
     } catch (error) {
         if (isYamlOutput()) {

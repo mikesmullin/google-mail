@@ -39,6 +39,9 @@ google-email delete <id>
 google-email plan
 google-email apply [--dry-run]
 
+google-email clear <id>
+google-email clear --erase <id>
+
 google-email labels
 google-email clean
 ```
@@ -323,15 +326,155 @@ limit: 1
 available: 126
 processed: 1
 written: 0
+updated: 0
 skipped: 1
+remoteChanges: 0
 results:
   - id: 9016ec1f8ffd4077abb3443d0be5935139e0ff54
     shortId: 9016ec
     subject: How to stay on top of the market
-    status: skipped
+    status: skipped  # 'written' | 'updated' | 'skipped'
+    transitions: []   # populated when status = 'updated'
+gone: []             # list of {id, subject, transitions} for emails gone from unread inbox
 ```
 
-### 9) `google-email labels`
+Transition object shape (appears in `results[].transitions`, `gone[].transitions`,
+and stored in `email.offline.transitions[]` inside each cached `.md` file):
+
+```yaml
+type: <string>       # see types below
+from: [<labelId>, …] # label set before this pull
+to:   [<labelId>, …] # label set after this pull
+added:   [<labelId>, …]
+removed: [<labelId>, …]
+detectedAt: '<ISO-8601>'
+```
+
+**One example per transition type:**
+
+`new` — email first written to local cache (no `from` state):
+
+```yaml
+# Not a transition entry — status: 'written' in the pull result.
+# Indicates the email did not exist locally before this pull.
+# No entry is appended to offline.transitions for this case.
+```
+
+`read` — email was marked read remotely (UNREAD label disappeared):
+
+```yaml
+type: read
+from: [UNREAD, INBOX, CATEGORY_UPDATES]
+to:   [INBOX, CATEGORY_UPDATES]
+added: []
+removed: [UNREAD]
+detectedAt: '2026-05-02T10:00:00.000Z'
+```
+
+`unread` — email was marked unread remotely (UNREAD label re-appeared):
+
+```yaml
+type: unread
+from: [INBOX, CATEGORY_UPDATES]
+to:   [UNREAD, INBOX, CATEGORY_UPDATES]
+added: [UNREAD]
+removed: []
+detectedAt: '2026-05-02T10:00:00.000Z'
+```
+
+`archived` — email removed from INBOX (archived in Gmail):
+
+```yaml
+type: archived
+from: [UNREAD, INBOX, CATEGORY_UPDATES]
+to:   [UNREAD, CATEGORY_UPDATES]
+added: []
+removed: [INBOX]
+detectedAt: '2026-05-02T10:00:00.000Z'
+```
+
+`deleted` — email moved to trash (TRASH label added) or permanently deleted (404):
+
+```yaml
+# Trashed via Gmail UI
+type: deleted
+from: [UNREAD, INBOX]
+to:   [TRASH]
+added: [TRASH]
+removed: [UNREAD, INBOX]
+detectedAt: '2026-05-02T10:00:00.000Z'
+
+# Permanently deleted (Gmail API returned 404)
+type: deleted
+from: [UNREAD, INBOX]
+to:   []
+added: []
+removed: [UNREAD, INBOX]
+detectedAt: '2026-05-02T10:00:00.000Z'
+```
+
+`labels_changed` — any other label change that doesn't match the above patterns
+(e.g. user label added/removed, moved between categories):
+
+```yaml
+type: labels_changed
+from: [UNREAD, INBOX, CATEGORY_UPDATES]
+to:   [UNREAD, INBOX, Label_12345678]
+added: [Label_12345678]
+removed: [CATEGORY_UPDATES]
+detectedAt: '2026-05-02T10:00:00.000Z'
+```
+
+Transitions accumulate across pulls — they are appended to `offline.transitions[]`,
+never overwritten. The full history is visible via `google-email inbox view <id> --yaml`.
+
+Human output fields added to summary:
+
+```text
+  Updated:        <n>   # emails with detected remote label changes
+  Remote changes: <n>   # emails gone from unread inbox (probed via Gmail API)
+```
+
+### 9) `google-email clear [--erase] <id>`
+
+Clear pending (unapplied) offline mutations for a specific email. Preserves
+remote-state transition history (`offline.transitions`).
+
+```bash
+google-email clear <id>          # wipe queued mutations
+google-email clear --erase <id>  # delete local cache file entirely
+```
+
+Human output (mutations cleared):
+
+```text
+✓ Cleared 2 pending mutation(s) for: <full-id>
+  <subject>
+  Cleared: delete, archive
+```
+
+YAML output (`google-email clear <id> --yaml`):
+
+```yaml
+ok: true
+status: cleared        # or 'noop' | 'erased'
+id: <full-id>
+subject: <subject>
+cleared:               # omitted on 'erased'
+  - delete
+  - archive
+```
+
+`--erase` YAML output:
+
+```yaml
+ok: true
+status: erased
+id: <full-id>
+subject: <subject>
+```
+
+### 10) `google-email labels`
 
 Human output (representative):
 
@@ -359,7 +502,7 @@ labels:
     threadsUnread: 7
 ```
 
-### 10) `google-email clean`
+### 11) `google-email clean`
 
 Human output:
 
@@ -398,11 +541,17 @@ Common YAML error codes by command:
 - `labels`: `MISSING_CREDENTIALS`, `LIST_LABELS_FAILED`
 - `clean`: `READ_STORAGE_FAILED`
 - ID-based commands: `EMAIL_NOT_FOUND`
+- `clear`: `MISSING_ID`, `EMAIL_NOT_FOUND`
 
 ## Operational Notes
 
 - `inbox read/unread`, `move`, `archive`, `delete` queue local mutations.
 - `plan` shows queued mutations.
 - `apply` pushes queued mutations to Gmail.
+- `clear <id>` rolls back queued mutations without applying them. Use `--erase` to remove the cached file entirely.
 - `inbox list` unread mode hides items with pending removal (`delete/archive/move`) and local read state.
 - Partial ID matching is supported for all ID-based commands.
+- `pull` now detects remote label changes on every execution:
+  - For emails returned by the query: label diffs vs. cached copy → stored in `email.offline.transitions`.
+  - For cached emails within the pull window not returned by the query: probed via `messages.get(minimal)` to detect read/archive/delete → stored in `email.offline.transitions`.
+  - Transitions accumulate across pulls — they are never overwritten, only appended.
