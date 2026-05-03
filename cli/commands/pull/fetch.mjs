@@ -1,10 +1,12 @@
 /**
- * Fetch unread emails from Gmail since a given date
+ * Fetch unread emails from Gmail since a given date.
+ * Uses format: 'minimal' for already-cached emails (avoids re-downloading body).
  * @param {object} gmail - Gmail API client
  * @param {Date} sinceDate - Fetch emails received on or after this date
+ * @param {Set<string>} existingGmailIds - Gmail message IDs already in local cache
  * @returns {Promise<Array>} Array of email message objects
  */
-export async function fetchUnreadEmails(gmail, sinceDate) {
+export async function fetchUnreadEmails(gmail, sinceDate, existingGmailIds = new Set()) {
     const emails = [];
 
     // Convert date to Gmail search format (YYYY/MM/DD)
@@ -25,9 +27,12 @@ export async function fetchUnreadEmails(gmail, sinceDate) {
             const messages = response.data.messages || [];
 
             for (const msg of messages) {
-                const fullMessage = await fetchFullMessage(gmail, msg.id);
-                if (fullMessage) {
-                    emails.push(fullMessage);
+                const isNew = !existingGmailIds.has(msg.id);
+                const fetched = isNew
+                    ? await fetchFullMessage(gmail, msg.id)
+                    : await fetchMinimalMessage(gmail, msg.id);
+                if (fetched) {
+                    emails.push(fetched);
                 }
             }
 
@@ -75,6 +80,35 @@ async function fetchFullMessage(gmail, messageId) {
         });
 
         return normalizeEmail(response.data);
+    } catch (error) {
+        console.error(`Warning: Failed to fetch message ${messageId}: ${error.message}`);
+        return null;
+    }
+}
+
+/**
+ * Fetch minimal message details (labels only, no body) for already-cached emails.
+ * @param {object} gmail - Gmail API client
+ * @param {string} messageId - Message ID
+ * @returns {Promise<object>} Partial normalized email object (id, labelIds, isRead, snippet, receivedDateTime)
+ */
+async function fetchMinimalMessage(gmail, messageId) {
+    try {
+        const response = await gmail.users.messages.get({
+            userId: 'me',
+            id: messageId,
+            format: 'minimal',
+        });
+
+        const msg = response.data;
+        return {
+            id: msg.id,
+            threadId: msg.threadId,
+            labelIds: msg.labelIds || [],
+            isRead: !(msg.labelIds || []).includes('UNREAD'),
+            snippet: msg.snippet || '',
+            receivedDateTime: new Date(parseInt(msg.internalDate)).toISOString(),
+        };
     } catch (error) {
         console.error(`Warning: Failed to fetch message ${messageId}: ${error.message}`);
         return null;

@@ -1,5 +1,5 @@
 import { getGmailClient, hasCredentials, getCredentialsPath } from '../lib/client.mjs';
-import { getStorageDir } from '../lib/storage.mjs';
+import { getStorageDir, loadAllEmails } from '../lib/storage.mjs';
 import { parseDate } from '../lib/utils.mjs';
 import { fetchUnreadEmails } from './pull/fetch.mjs';
 import { processEmail, detectGoneEmails } from './pull/process.mjs';
@@ -114,7 +114,10 @@ export default async function pullCommand(args) {
         const gmail = await getGmailClient();
         await ensureStorageDir();
 
-        const emails = await fetchUnreadEmails(gmail, sinceDate);
+        const allCached = await loadAllEmails();
+        const existingGmailIds = new Set(allCached.map(({ email }) => email.id).filter(Boolean));
+
+        const emails = await fetchUnreadEmails(gmail, sinceDate, existingGmailIds);
 
         if (emails.length === 0) {
             if (isYamlOutput()) {

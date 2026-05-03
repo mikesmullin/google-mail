@@ -129,12 +129,13 @@ export async function processEmail(gmail, email) {
         await saveEmail(hash, cached);
     }
 
+    const subject = cached.subject || email.subject || '';
     return {
         written: false,
         updated: !!transition,
         id: hash,
-        subject: email.subject,
-        reference: formatEmailRef(hash, email.subject),
+        subject,
+        reference: formatEmailRef(hash, subject),
         transitions: transition ? [transition] : [],
     };
 }
