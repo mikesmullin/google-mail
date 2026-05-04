@@ -21,7 +21,7 @@ function getPendingMutations(email) {
     const mutations = [];
     const offline = email.offline || {};
 
-    if (offline.read === true) {
+    if (offline.read === true && offline.readQueuedAt) {
         mutations.push({ type: 'read', queuedAt: offline.readQueuedAt });
     }
 

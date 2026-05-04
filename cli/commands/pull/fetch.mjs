@@ -66,6 +66,16 @@ function formatGmailDate(date) {
 }
 
 /**
+ * Fetch a single email by Gmail message ID (full format, normalized).
+ * @param {object} gmail - Gmail API client
+ * @param {string} messageId - Gmail message ID
+ * @returns {Promise<object|null>} Normalized email object or null on failure
+ */
+export async function fetchEmailById(gmail, messageId) {
+    return fetchFullMessage(gmail, messageId);
+}
+
+/**
  * Fetch full message details
  * @param {object} gmail - Gmail API client
  * @param {string} messageId - Message ID

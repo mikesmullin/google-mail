@@ -3,6 +3,7 @@ import { getGmailClient, hasCredentials, getCredentialsPath } from '../lib/clien
 import { colorize, colors, getShortId } from '../lib/utils.mjs';
 import { getPendingMutations } from './plan.mjs';
 import { isYamlOutput, printYaml } from '../lib/output.mjs';
+import { fetchEmailById } from './pull/fetch.mjs';
 
 function printUsage() {
     console.log(`
@@ -240,6 +241,7 @@ export default async function applyCommand(args) {
         const subject = email.subject || '(No Subject)';
         const truncatedSubject = subject.length > 40 ? subject.substring(0, 37) + '...' : subject;
 
+        let emailErrorCount = 0;
         for (const mutation of mutations) {
             const actionDesc = formatAction(mutation);
             const resultEntry = {
@@ -267,16 +269,24 @@ export default async function applyCommand(args) {
                     if (!isYamlOutput()) {
                         console.log(`  ${colorize('✗', colors.red)} ${shortId}\t${actionDesc}\t${error.message}`);
                     }
+                    emailErrorCount++;
                     errorCount++;
                     results.push({ ...resultEntry, status: 'failed', error: error.message });
                 }
             }
         }
 
-        // Clear mutations and save if not dry run and all succeeded
-        if (!dryRun && errorCount === 0) {
-            clearMutations(email, mutations);
-            await saveEmail(id, email);
+        // Re-fetch from Gmail to sync local cache after all mutations applied successfully
+        if (!dryRun && emailErrorCount === 0) {
+            const fresh = await fetchEmailById(gmail, email.id);
+            if (fresh) {
+                fresh._stored_id = id;
+                fresh._stored_at = email._stored_at;
+                await saveEmail(id, fresh);
+                if (!isYamlOutput()) {
+                    console.log(`  ${colorize('↓', colors.cyan)} ${shortId}\tcache refreshed from remote`);
+                }
+            }
         }
     }
 
