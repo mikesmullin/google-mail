@@ -1,17 +1,21 @@
 import { loadAllEmails } from '../lib/storage.mjs';
-import { colorize, colors, getShortId } from '../lib/utils.mjs';
+import { colorize, colors, getShortId, findEmailById } from '../lib/utils.mjs';
 import { isYamlOutput, printYaml } from '../lib/output.mjs';
 
 function printUsage() {
     console.log(`
-Usage: google-email plan
+Usage: google-email plan [id]
 
 Show pending mutations queued for Gmail sync.
 These operations will be applied when you run 'google-email apply'.
 
+Arguments:
+  [id]    Optional email hash ID or partial ID to filter to one email
+
 Examples:
   google-email plan
-`);
+  google-email plan f86bca
+`);  
 }
 
 /**
@@ -70,10 +74,27 @@ export default async function planCommand(args) {
         return;
     }
 
-    const emails = await loadAllEmails();
+    const partialId = args.find((a) => !a.startsWith('-'));
+
+    let emailEntries;
+    if (partialId) {
+        const result = await findEmailById(partialId);
+        if (!result) {
+            if (isYamlOutput()) {
+                printYaml({ ok: false, error: { code: 'EMAIL_NOT_FOUND', id: partialId } });
+            } else {
+                console.error(`${colorize('✗', colors.red)} Email not found: ${partialId}`);
+            }
+            process.exit(1);
+        }
+        emailEntries = [result];
+    } else {
+        emailEntries = await loadAllEmails();
+    }
+
     const pending = [];
 
-    for (const { id, email } of emails) {
+    for (const { id, email } of emailEntries) {
         const mutations = getPendingMutations(email);
         if (mutations.length > 0) {
             pending.push({ id, email, mutations });

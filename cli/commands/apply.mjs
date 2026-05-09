@@ -1,16 +1,19 @@
 import { loadAllEmails, saveEmail } from '../lib/storage.mjs';
 import { getGmailClient, hasCredentials, getCredentialsPath } from '../lib/client.mjs';
-import { colorize, colors, getShortId } from '../lib/utils.mjs';
+import { colorize, colors, getShortId, findEmailById } from '../lib/utils.mjs';
 import { getPendingMutations } from './plan.mjs';
 import { isYamlOutput, printYaml } from '../lib/output.mjs';
 import { fetchEmailById } from './pull/fetch.mjs';
 
 function printUsage() {
     console.log(`
-Usage: google-email apply [options]
+Usage: google-email apply [id] [options]
 
-Apply all pending mutations to Gmail.
+Apply pending mutations to Gmail.
 This syncs your offline changes to the remote server.
+
+Arguments:
+  [id]         Optional email hash ID or partial ID to apply only that email
 
 Options:
   --dry-run    Show what would be done without making changes
@@ -18,7 +21,9 @@ Options:
 
 Examples:
   google-email apply
+  google-email apply f86bca
   google-email apply --dry-run
+  google-email apply f86bca --dry-run
 `);
 }
 
@@ -170,6 +175,7 @@ export default async function applyCommand(args) {
     }
 
     const dryRun = args.includes('--dry-run');
+    const partialId = args.find((a) => !a.startsWith('-'));
 
     // Check for credentials
     if (!dryRun && !(await hasCredentials())) {
@@ -190,10 +196,25 @@ export default async function applyCommand(args) {
         process.exit(1);
     }
 
-    const emails = await loadAllEmails();
+    let emailEntries;
+    if (partialId) {
+        const result = await findEmailById(partialId);
+        if (!result) {
+            if (isYamlOutput()) {
+                printYaml({ ok: false, error: { code: 'EMAIL_NOT_FOUND', id: partialId } });
+            } else {
+                console.error(`${colorize('✗', colors.red)} Email not found: ${partialId}`);
+            }
+            process.exit(1);
+        }
+        emailEntries = [result];
+    } else {
+        emailEntries = await loadAllEmails();
+    }
+
     const pending = [];
 
-    for (const { id, email } of emails) {
+    for (const { id, email } of emailEntries) {
         const mutations = getPendingMutations(email);
         if (mutations.length > 0) {
             pending.push({ id, email, mutations });

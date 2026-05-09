@@ -36,8 +36,8 @@ google-email move <id> <folder>
 google-email archive <id>
 google-email delete <id>
 
-google-email plan
-google-email apply [--dry-run]
+google-email plan [<id>]
+google-email apply [<id>] [--dry-run]
 
 google-email clear <id>
 google-email clear --erase <id>
@@ -227,7 +227,18 @@ id: <full-id>
 subject: <subject>
 ```
 
-### 6) `google-email plan`
+### 6) `google-email plan [<id>]`
+
+Without `<id>`: shows all emails with pending mutations.
+With `<id>`: scoped to that one email (partial/full hash accepted).
+
+Input examples:
+
+```bash
+google-email plan
+google-email plan 55e807
+google-email plan 55e807b469aafdf0408fe39ead019b311d9d4cde
+```
 
 Human output:
 
@@ -256,7 +267,21 @@ pending:
       - type: read
 ```
 
-### 7) `google-email apply [--dry-run]`
+### 7) `google-email apply [<id>] [--dry-run]`
+
+Without `<id>`: applies mutations for all pending emails.
+With `<id>`: applies mutations for that one email only (partial/full hash accepted).
+After a successful apply the local cache file is replaced with a fresh copy fetched
+from Gmail, so local state mirrors exact remote state.
+
+Input examples:
+
+```bash
+google-email apply
+google-email apply 55e807
+google-email apply 55e807 --dry-run
+google-email apply --dry-run
+```
 
 Human dry-run output:
 
