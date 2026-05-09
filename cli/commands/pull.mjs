@@ -1,7 +1,7 @@
 import { getGmailClient, hasCredentials, getCredentialsPath } from '../lib/client.mjs';
 import { getStorageDir, loadAllEmails } from '../lib/storage.mjs';
 import { parseDate } from '../lib/utils.mjs';
-import { fetchUnreadEmails } from './pull/fetch.mjs';
+import { fetchUnreadEmails, fetchAllEmails } from './pull/fetch.mjs';
 import { processEmail, detectGoneEmails } from './pull/process.mjs';
 import { isYamlOutput, printYaml } from '../lib/output.mjs';
 import fs from 'fs/promises';
@@ -11,7 +11,7 @@ function printUsage() {
 Usage: google-email pull --since <date> [options]
 
 Required:
-  --since <date>  Fetch unread emails since this date
+  --since <date>  Fetch emails since this date
                   Accepted formats:
                     - YYYY-MM-DD (e.g., 2026-01-01)
                     - yesterday
@@ -19,18 +19,21 @@ Required:
 
 Options:
   -l, --limit <n>  Limit processing to first N emails (optional)
+  --all            Include read emails (default: unread only)
   --help            Show this help message
 
 Examples:
   google-email pull --since 2026-01-01
   google-email pull --since yesterday --limit 5
   google-email pull --since "7 days ago"
+  google-email pull --since "7 days ago" --all
 `);
 }
 
 function parseArgs(args) {
     let sinceDate = null;
     let limit = null;
+    let all = false;
 
     for (let i = 0; i < args.length; i++) {
         if (args[i] === '--since') {
@@ -50,6 +53,8 @@ function parseArgs(args) {
             } else {
                 throw new Error('--limit requires a number');
             }
+        } else if (args[i] === '--all') {
+            all = true;
         }
     }
 
@@ -57,7 +62,7 @@ function parseArgs(args) {
         throw new Error('--since date is required');
     }
 
-    return { sinceDate, limit };
+    return { sinceDate, limit, all };
 }
 
 async function ensureStorageDir() {
@@ -75,11 +80,12 @@ export default async function pullCommand(args) {
         return;
     }
 
-    let sinceDate, limit;
+    let sinceDate, limit, all;
     try {
         const parsed = parseArgs(args);
         sinceDate = parsed.sinceDate;
         limit = parsed.limit;
+        all = parsed.all;
     } catch (error) {
         if (isYamlOutput()) {
             printYaml({ ok: false, error: { code: 'INVALID_ARGUMENTS', message: error.message } });
@@ -104,7 +110,7 @@ export default async function pullCommand(args) {
     }
 
     if (!isYamlOutput()) {
-        console.log(`Fetching unread emails since: ${sinceDate.toISOString().split('T')[0]}`);
+        console.log(`Fetching ${all ? 'all' : 'unread'} emails since: ${sinceDate.toISOString().split('T')[0]}`);
         if (limit) {
             console.log(`Processing limit: ${limit}`);
         }
@@ -117,7 +123,7 @@ export default async function pullCommand(args) {
         const allCached = await loadAllEmails();
         const existingGmailIds = new Set(allCached.map(({ email }) => email.id).filter(Boolean));
 
-        const emails = await fetchUnreadEmails(gmail, sinceDate, existingGmailIds);
+        const emails = await (all ? fetchAllEmails : fetchUnreadEmails)(gmail, sinceDate, existingGmailIds);
 
         if (emails.length === 0) {
             if (isYamlOutput()) {
@@ -125,6 +131,7 @@ export default async function pullCommand(args) {
                     ok: true,
                     since: sinceDate.toISOString(),
                     limit,
+                    all,
                     available: 0,
                     processed: 0,
                     written: 0,
@@ -138,7 +145,7 @@ export default async function pullCommand(args) {
         }
 
         if (!isYamlOutput()) {
-            console.log(`Found ${emails.length} unread emails.`);
+            console.log(`Found ${emails.length} ${all ? '' : 'unread '}emails.`);
         }
 
         let written = 0;
@@ -202,6 +209,7 @@ export default async function pullCommand(args) {
                 ok: true,
                 since: sinceDate.toISOString(),
                 limit,
+                all,
                 available: emails.length,
                 processed,
                 written,

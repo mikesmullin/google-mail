@@ -7,11 +7,21 @@
  * @returns {Promise<Array>} Array of email message objects
  */
 export async function fetchUnreadEmails(gmail, sinceDate, existingGmailIds = new Set()) {
+    return fetchEmails(gmail, sinceDate, existingGmailIds, { unreadOnly: true });
+}
+
+export async function fetchAllEmails(gmail, sinceDate, existingGmailIds = new Set()) {
+    return fetchEmails(gmail, sinceDate, existingGmailIds, { unreadOnly: false });
+}
+
+async function fetchEmails(gmail, sinceDate, existingGmailIds = new Set(), { unreadOnly = true } = {}) {
     const emails = [];
 
     // Convert date to Gmail search format (YYYY/MM/DD)
     const sinceDateStr = formatGmailDate(sinceDate);
-    const query = `is:unread in:inbox after:${sinceDateStr}`;
+    const query = unreadOnly
+        ? `is:unread in:inbox after:${sinceDateStr}`
+        : `in:inbox after:${sinceDateStr}`;
 
     try {
         let pageToken = null;
