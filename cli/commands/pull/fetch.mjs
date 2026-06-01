@@ -38,11 +38,16 @@ async function fetchEmails(gmail, sinceDate, existingGmailIds = new Set(), { unr
 
             for (const msg of messages) {
                 const isNew = !existingGmailIds.has(msg.id);
-                const fetched = isNew
-                    ? await fetchFullMessage(gmail, msg.id)
-                    : await fetchMinimalMessage(gmail, msg.id);
-                if (fetched) {
-                    emails.push(fetched);
+                if (isNew) {
+                    const fetched = await fetchFullMessage(gmail, msg.id);
+                    if (fetched) {
+                        emails.push(fetched);
+                    }
+                } else {
+                    // Already cached and confirmed present by the search query.
+                    // No API call needed — push a lightweight stub so fetchedGmailIds
+                    // stays complete for detectGoneEmails.
+                    emails.push({ id: msg.id, threadId: msg.threadId, _isStub: true });
                 }
             }
 

@@ -108,6 +108,20 @@ export async function processEmail(gmail, email) {
         };
     }
 
+    // Email already cached. If this is a lightweight stub (no remote data fetched),
+    // the search query already confirmed it is still in the expected state — skip.
+    if (email._isStub) {
+        const subject = (await loadEmail(hash)).subject || '';
+        return {
+            written: false,
+            updated: false,
+            id: hash,
+            subject,
+            reference: formatEmailRef(hash, subject),
+            transitions: [],
+        };
+    }
+
     // Email already cached — check for label changes since last pull
     const cached = await loadEmail(hash);
     const cachedLabelIds = cached.labelIds || [];
